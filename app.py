@@ -9,22 +9,40 @@ from PIL import Image
 from transformers import pipeline
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
-MODEL_NAME = "umm-maybe/AI-image-detector"
+
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_MODEL_DIR = BASE_DIR / "model_output"
+HF_MODEL_NAME = "Purna94/ai-image-detector"
+FALLBACK_HF_MODEL = "umm-maybe/AI-image-detector"
 
 app = FastAPI(title="AI Image Detector")
 
-BASE_DIR = Path(__file__).resolve().parent
 static_dir = BASE_DIR / "static"
 if static_dir.is_dir():
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 classifier: pipeline = None
+model_source: str = ""
 
 
 @app.on_event("startup")
 def load_model():
-    global classifier
-    classifier = pipeline("image-classification", model=MODEL_NAME)
+    global classifier, model_source
+    if LOCAL_MODEL_DIR.is_dir() and (LOCAL_MODEL_DIR / "config.json").exists():
+        try:
+            classifier = pipeline("image-classification", model=str(LOCAL_MODEL_DIR))
+            model_source = "local"
+            return
+        except Exception:
+            pass
+    for candidate in [HF_MODEL_NAME, FALLBACK_HF_MODEL]:
+        try:
+            classifier = pipeline("image-classification", model=candidate)
+            model_source = candidate
+            return
+        except Exception:
+            continue
+    classifier = None
 
 
 @app.get("/health")
